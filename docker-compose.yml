@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: wallet-ledger-postgres
+    environment:
+      POSTGRES_DB: wallet_ledger
+      POSTGRES_USER: wallet
+      POSTGRES_PASSWORD: wallet_dev_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - wallet-ledger-postgres:/var/lib/postgresql/data
+      - ./src/WalletLedger.Api/Infrastructure/Database/schema.sql:/docker-entrypoint-initdb.d/001-schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U wallet -d wallet_ledger"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  wallet-ledger-postgres:

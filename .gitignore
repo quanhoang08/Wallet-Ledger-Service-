@@ -1,0 +1,23 @@
+# Build output
+bin/
+obj/
+.vs/
+*.user
+*.suo
+
+# Local secrets and environment files
+.env
+.env.*
+!.env.example
+
+# IDE files
+.idea/
+.vscode/settings.json
+
+# Test and coverage output
+TestResults/
+coverage/
+
+# OS files
+.DS_Store
+Thumbs.db
