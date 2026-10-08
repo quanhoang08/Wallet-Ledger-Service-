@@ -9,10 +9,15 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
+      # Download the exact source revision that triggered this workflow.
       - uses: actions/checkout@v4
+      # Install the SDK used by global.json and the project target framework.
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 10.0.x
+      # Restore dependencies once so build and test use the same assets.
       - run: dotnet restore WalletLedger.slnx
+      # Compile every project in Release mode; this catches code and project-file errors.
       - run: dotnet build WalletLedger.slnx --no-restore --configuration Release
+      # Run the test suite only after a successful compilation.
       - run: dotnet test WalletLedger.slnx --no-build --configuration Release

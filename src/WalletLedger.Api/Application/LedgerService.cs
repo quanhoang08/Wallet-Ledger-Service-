@@ -12,6 +12,7 @@ public sealed class LedgerService(IDbConnectionFactory connectionFactory, IConfi
 {
     private readonly Guid _systemAccountId = configuration.GetValue<Guid>("SystemAccountId");
 
+    // Create the account and its balance row together so every account is immediately readable.
     public async Task<AccountResponse> CreateAccountAsync(CreateAccountRequest request, CancellationToken cancellationToken)
     {
         ValidateCurrency(request.Currency);
@@ -59,6 +60,7 @@ public sealed class LedgerService(IDbConnectionFactory connectionFactory, IConfi
     }
 
     public Task<TransactionResponse> TopUpAsync(string idempotencyKey, TopUpRequest request, CancellationToken cancellationToken) =>
+        // A top-up is a balanced transfer from the configured system account.
         ExecuteIdempotentAsync(idempotencyKey, request, TransactionType.Topup, async (connection, transaction) =>
         {
             if (_systemAccountId == Guid.Empty)
@@ -67,6 +69,7 @@ public sealed class LedgerService(IDbConnectionFactory connectionFactory, IConfi
         }, cancellationToken);
 
     public Task<TransactionResponse> TransferAsync(string idempotencyKey, TransferRequest request, CancellationToken cancellationToken) =>
+        // Internal transfers use the same posting path as top-ups, with a user account on each side.
         ExecuteIdempotentAsync(idempotencyKey, request, TransactionType.Transfer, async (connection, transaction) =>
         {
             return await PostBalancedTransactionAsync(connection, transaction, request.FromAccountId, request.ToAccountId, request.Amount, request.Currency, request.Reference, TransactionType.Transfer, cancellationToken);
@@ -99,6 +102,7 @@ public sealed class LedgerService(IDbConnectionFactory connectionFactory, IConfi
         Func<NpgsqlConnection, NpgsqlTransaction, Task<TransactionResponse>> operation,
         CancellationToken cancellationToken)
     {
+        // The unique key serializes retries; the request hash prevents the same key being reused for a different command.
         if (string.IsNullOrWhiteSpace(key)) throw new ValidationException("Idempotency-Key is required.");
         var requestHash = ComputeHash(request);
         await using var connection = connectionFactory.Create();
@@ -155,6 +159,7 @@ public sealed class LedgerService(IDbConnectionFactory connectionFactory, IConfi
 
         var firstId = debitAccountId.CompareTo(creditAccountId) < 0 ? debitAccountId : creditAccountId;
         var secondId = firstId == debitAccountId ? creditAccountId : debitAccountId;
+        // Always lock both rows in the same order so opposite transfers do not deadlock.
         await using var lockCommand = new NpgsqlCommand(
             @"SELECT account_id, balance, held, currency, status, allow_negative FROM account_balances JOIN accounts USING (account_id) WHERE account_id IN (@first, @second) ORDER BY account_id FOR UPDATE", connection, transaction);
         lockCommand.Parameters.AddWithValue("first", firstId);
@@ -175,6 +180,7 @@ public sealed class LedgerService(IDbConnectionFactory connectionFactory, IConfi
         var transactionId = Guid.NewGuid();
         var debitAfter = debit.Balance - amount;
         var creditAfter = credit.Balance + amount;
+        // Ledger entries, balances and the outbox event share one database transaction.
         await using (var command = new NpgsqlCommand(
             "INSERT INTO transactions (id, type, reference) VALUES (@id, @type, @reference)", connection, transaction))
         {

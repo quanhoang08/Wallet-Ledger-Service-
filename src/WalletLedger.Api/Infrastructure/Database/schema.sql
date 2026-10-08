@@ -1,5 +1,6 @@
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
+-- Account identity and the current balance read model.
 CREATE TABLE IF NOT EXISTS accounts (
     id uuid PRIMARY KEY,
     owner_id uuid NOT NULL,
@@ -62,6 +63,7 @@ CREATE INDEX IF NOT EXISTS ix_outbox_unprocessed
     ON outbox_messages (created_at)
     WHERE processed_at IS NULL;
 
+-- Ledger rows are audit history: corrections must be new reversal transactions, never mutations.
 CREATE OR REPLACE FUNCTION reject_ledger_mutation() RETURNS trigger AS $$
 BEGIN
     RAISE EXCEPTION 'ledger_entries is append-only';
@@ -73,6 +75,7 @@ CREATE TRIGGER ledger_entries_immutable
     BEFORE UPDATE OR DELETE ON ledger_entries
     FOR EACH ROW EXECUTE FUNCTION reject_ledger_mutation();
 
+-- Enforce double-entry accounting at commit time, not only in application code.
 CREATE OR REPLACE FUNCTION validate_transaction_balance() RETURNS trigger AS $$
 DECLARE debit_total bigint;
 DECLARE credit_total bigint;
@@ -96,6 +99,7 @@ CREATE CONSTRAINT TRIGGER transaction_balance_check
     DEFERRABLE INITIALLY DEFERRED
     FOR EACH ROW EXECUTE FUNCTION validate_transaction_balance();
 
+-- Local demo funding account used by POST /topups.
 INSERT INTO accounts (id, owner_id, type, currency, status, allow_negative)
 VALUES ('00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000001', 'System', 'VND', 'Active', true)
 ON CONFLICT (id) DO NOTHING;
