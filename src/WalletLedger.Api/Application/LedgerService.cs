@@ -21,8 +21,7 @@ public sealed class LedgerService(IDbConnectionFactory connectionFactory, IConfi
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
 
         await using (var accountCommand = new NpgsqlCommand(
-            """INSERT INTO accounts (id, owner_id, type, currency, status, allow_negative)
-               VALUES (@id, @owner, @type, @currency, 'Active', @allow_negative)""", connection, transaction))
+            @"INSERT INTO accounts (id, owner_id, type, currency, status, allow_negative) VALUES (@id, @owner, @type, @currency, 'Active', @allow_negative)", connection, transaction))
         {
             accountCommand.Parameters.AddWithValue("id", accountId);
             accountCommand.Parameters.AddWithValue("owner", request.OwnerId);
@@ -48,9 +47,7 @@ public sealed class LedgerService(IDbConnectionFactory connectionFactory, IConfi
         await using var connection = connectionFactory.Create();
         await connection.OpenAsync(cancellationToken);
         await using var command = new NpgsqlCommand(
-            """SELECT a.currency, b.balance, b.held, b.version
-               FROM accounts a JOIN account_balances b ON b.account_id = a.id
-               WHERE a.id = @id""", connection);
+            @"SELECT a.currency, b.balance, b.held, b.version FROM accounts a JOIN account_balances b ON b.account_id = a.id WHERE a.id = @id", connection);
         command.Parameters.AddWithValue("id", accountId);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken))
@@ -81,10 +78,7 @@ public sealed class LedgerService(IDbConnectionFactory connectionFactory, IConfi
         await using var connection = connectionFactory.Create();
         await connection.OpenAsync(cancellationToken);
         await using var command = new NpgsqlCommand(
-            """SELECT id, transaction_id, account_id, direction, amount, balance_after, created_at
-               FROM ledger_entries
-               WHERE account_id = @account_id AND (@before_id IS NULL OR id < @before_id)
-               ORDER BY id DESC LIMIT @limit""", connection);
+            @"SELECT id, transaction_id, account_id, direction, amount, balance_after, created_at FROM ledger_entries WHERE account_id = @account_id AND (@before_id IS NULL OR id < @before_id) ORDER BY id DESC LIMIT @limit", connection);
         command.Parameters.AddWithValue("account_id", accountId);
         command.Parameters.AddWithValue("before_id", (object?)beforeId ?? DBNull.Value);
         command.Parameters.AddWithValue("limit", limit);
@@ -113,8 +107,7 @@ public sealed class LedgerService(IDbConnectionFactory connectionFactory, IConfi
 
         int inserted;
         await using (var insert = new NpgsqlCommand(
-            """INSERT INTO idempotency_records (key, request_hash, locked_at)
-               VALUES (@key, @hash, now()) ON CONFLICT (key) DO NOTHING""", connection, transaction))
+            @"INSERT INTO idempotency_records (key, request_hash, locked_at) VALUES (@key, @hash, now()) ON CONFLICT (key) DO NOTHING", connection, transaction))
         {
             insert.Parameters.AddWithValue("key", key);
             insert.Parameters.AddWithValue("hash", requestHash);
@@ -163,9 +156,7 @@ public sealed class LedgerService(IDbConnectionFactory connectionFactory, IConfi
         var firstId = debitAccountId.CompareTo(creditAccountId) < 0 ? debitAccountId : creditAccountId;
         var secondId = firstId == debitAccountId ? creditAccountId : debitAccountId;
         await using var lockCommand = new NpgsqlCommand(
-            """SELECT account_id, balance, held, currency, status, allow_negative
-               FROM account_balances JOIN accounts USING (account_id)
-               WHERE account_id IN (@first, @second) ORDER BY account_id FOR UPDATE""", connection, transaction);
+            @"SELECT account_id, balance, held, currency, status, allow_negative FROM account_balances JOIN accounts USING (account_id) WHERE account_id IN (@first, @second) ORDER BY account_id FOR UPDATE", connection, transaction);
         lockCommand.Parameters.AddWithValue("first", firstId);
         lockCommand.Parameters.AddWithValue("second", secondId);
         await using var reader = await lockCommand.ExecuteReaderAsync(cancellationToken);
@@ -193,9 +184,7 @@ public sealed class LedgerService(IDbConnectionFactory connectionFactory, IConfi
             await command.ExecuteNonQueryAsync(cancellationToken);
         }
         await using (var command = new NpgsqlCommand(
-            """INSERT INTO ledger_entries (transaction_id, account_id, direction, amount, balance_after)
-               VALUES (@transaction_id, @debit_account, 'Debit', @amount, @debit_after),
-                      (@transaction_id, @credit_account, 'Credit', @amount, @credit_after)""", connection, transaction))
+            @"INSERT INTO ledger_entries (transaction_id, account_id, direction, amount, balance_after) VALUES (@transaction_id, @debit_account, 'Debit', @amount, @debit_after), (@transaction_id, @credit_account, 'Credit', @amount, @credit_after)", connection, transaction))
         {
             command.Parameters.AddWithValue("transaction_id", transactionId);
             command.Parameters.AddWithValue("debit_account", debitAccountId);
@@ -206,11 +195,7 @@ public sealed class LedgerService(IDbConnectionFactory connectionFactory, IConfi
             await command.ExecuteNonQueryAsync(cancellationToken);
         }
         await using (var command = new NpgsqlCommand(
-            """UPDATE account_balances SET balance = CASE WHEN account_id = @debit_account THEN balance - @amount ELSE balance END,
-               version = version + 1 WHERE account_id = @debit_account;
-               UPDATE account_balances SET balance = CASE WHEN account_id = @credit_account THEN balance + @amount ELSE balance END,
-               version = version + 1 WHERE account_id = @credit_account;
-               INSERT INTO outbox_messages (id, type, payload) VALUES (@outbox_id, @event_type, @payload)""", connection, transaction))
+            @"UPDATE account_balances SET balance = CASE WHEN account_id = @debit_account THEN balance - @amount ELSE balance END, version = version + 1 WHERE account_id = @debit_account; UPDATE account_balances SET balance = CASE WHEN account_id = @credit_account THEN balance + @amount ELSE balance END, version = version + 1 WHERE account_id = @credit_account; INSERT INTO outbox_messages (id, type, payload) VALUES (@outbox_id, @event_type, @payload)", connection, transaction))
         {
             command.Parameters.AddWithValue("debit_account", debitAccountId);
             command.Parameters.AddWithValue("credit_account", creditAccountId);
